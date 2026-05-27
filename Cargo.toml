@@ -1,0 +1,22 @@
+[workspace]
+
+[package]
+name = "mcp-messaging"
+version = "1.0.0"
+edition = "2024"
+description = "Messaging & Notifications MCP server — push notifications, SMS, webhooks, in-app messaging, message queues, broadcasts"
+license = "Apache-2.0"
+repository = "https://github.com/zavora-ai/mcp-messaging"
+keywords = ["mcp", "messaging", "notifications", "push", "webhooks"]
+categories = ["api-bindings"]
+
+[dependencies]
+adk-mcp-sdk = "0.1"
+rmcp = { version = "1.7", features = ["server", "transport-io", "macros"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }

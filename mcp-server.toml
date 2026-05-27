@@ -1,0 +1,89 @@
+server_id = "mcp_messaging"
+display_name = "Messaging"
+version = "1.0.0"
+domain = "messaging"
+sdk_version = "0.1.0"
+risk_level = "medium"
+writes_allowed = "gated"
+transports = ["stdio"]
+governance_gates = ["rate_limit_required"]
+environments = ["development", "staging", "production"]
+
+credentials = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"]
+
+[[tools]]
+name = "send_push"
+description = "Send push notification via ntfy.sh"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "broadcast"
+description = "Broadcast to multiple topics"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "send_sms"
+description = "Send SMS via Twilio"
+risk_class = "internal_write"
+requires_approval = true
+credential_bindings = ["twilio"]
+
+[[tools]]
+name = "fire_webhook"
+description = "POST event to webhook URL"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "create_channel"
+description = "Create messaging channel"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "send_message"
+description = "Send in-app message"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_messages"
+description = "Get channel messages"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "enqueue"
+description = "Add message to queue"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "dequeue"
+description = "Remove messages from queue"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "queue_status"
+description = "Get queue depth and status"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "subscribe_webhook"
+description = "Subscribe webhook to topic"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
