@@ -72,6 +72,20 @@ pub struct MessageStatusInput {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct FcmInput {
+    /// FCM device token or topic (prefix topic with /topics/)
+    pub to: String,
+    /// Notification title
+    pub title: String,
+    /// Notification body
+    pub body: String,
+    /// Data payload (optional key-value pairs sent to app)
+    pub data: Option<Value>,
+    /// Priority: "high" or "normal" (default: high)
+    pub priority: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SetPriorityInput {
     /// Message ID in queue
     pub message_id: String,
@@ -207,6 +221,7 @@ pub struct MessagingServer {
     pub vonage_secret: Option<String>,
     pub sinch_plan_id: Option<String>,
     pub sinch_token: Option<String>,
+    pub fcm_server_key: Option<String>,
 }
 
 impl MessagingServer {
@@ -226,6 +241,7 @@ impl MessagingServer {
             vonage_secret: std::env::var("VONAGE_API_SECRET").ok(),
             sinch_plan_id: std::env::var("SINCH_SERVICE_PLAN_ID").ok(),
             sinch_token: std::env::var("SINCH_API_TOKEN").ok(),
+            fcm_server_key: std::env::var("FCM_SERVER_KEY").ok(),
         }
     }
 }
@@ -491,6 +507,39 @@ impl MessagingServer {
         match self.client.post(&url).bearer_auth(token).json(&body).send().await {
             Ok(resp) => match resp.json::<Value>().await {
                 Ok(data) => json!({"status": "sent", "provider": "sinch", "to": input.to, "batch_id": data["id"], "created_at": data["created_at"], "timestamp": now()}).to_string(),
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Firebase Cloud Messaging ===
+
+    #[tool(description = "Send push notification via Google Firebase Cloud Messaging (FCM). Supports device tokens and topics. Requires FCM_SERVER_KEY env var.")]
+    async fn send_fcm(&self, Parameters(input): Parameters<FcmInput>) -> String {
+        let Some(key) = &self.fcm_server_key else {
+            return json!({"status": "error", "message": "Firebase not configured. Set FCM_SERVER_KEY (from Firebase Console > Project Settings > Cloud Messaging)"}).to_string();
+        };
+        let priority = input.priority.as_deref().unwrap_or("high");
+        let mut body = json!({
+            "to": input.to,
+            "priority": priority,
+            "notification": {"title": input.title, "body": input.body}
+        });
+        if let Some(data) = input.data { body["data"] = data; }
+        match self.client.post("https://fcm.googleapis.com/fcm/send")
+            .header("Authorization", format!("key={}", key))
+            .json(&body).send().await {
+            Ok(resp) => match resp.json::<Value>().await {
+                Ok(data) => json!({
+                    "status": if data["success"].as_i64().unwrap_or(0) > 0 { "sent" } else { "failed" },
+                    "provider": "fcm",
+                    "success": data["success"],
+                    "failure": data["failure"],
+                    "message_id": data["results"][0]["message_id"],
+                    "multicast_id": data["multicast_id"],
+                    "timestamp": now()
+                }).to_string(),
                 Err(e) => format!("Error: {e}"),
             },
             Err(e) => format!("Error: {e}"),
