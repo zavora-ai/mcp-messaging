@@ -111,11 +111,29 @@ pub struct MessageInput {
     pub channel: String,
     /// Sender ID
     pub sender: String,
-    /// Message text
+    /// Message text (or HTML if msg_type is "html")
     pub text: String,
-    /// Message type: text, image, location, system (default: text)
+    /// Message type: text, html, image, video, audio, file, location, contact, system
     pub msg_type: Option<String>,
-    /// Optional metadata (e.g. image URL, coordinates)
+    /// Media URL (for image, video, audio, file types)
+    pub media_url: Option<String>,
+    /// Media MIME type (e.g. "image/png", "video/mp4", "audio/ogg")
+    pub mime_type: Option<String>,
+    /// Thumbnail URL (for video/image preview)
+    pub thumbnail_url: Option<String>,
+    /// File name (for file attachments)
+    pub file_name: Option<String>,
+    /// File size in bytes
+    pub file_size: Option<u64>,
+    /// Duration in seconds (for audio/video)
+    pub duration_seconds: Option<u32>,
+    /// Location latitude (for location type)
+    pub lat: Option<f64>,
+    /// Location longitude (for location type)
+    pub lon: Option<f64>,
+    /// Reply-to message ID (for threading)
+    pub reply_to: Option<String>,
+    /// Additional metadata
     pub metadata: Option<Value>,
 }
 
@@ -192,6 +210,15 @@ struct StoredMessage {
     sender: String,
     text: String,
     msg_type: String,
+    media_url: Option<String>,
+    mime_type: Option<String>,
+    thumbnail_url: Option<String>,
+    file_name: Option<String>,
+    file_size: Option<u64>,
+    duration_seconds: Option<u32>,
+    lat: Option<f64>,
+    lon: Option<f64>,
+    reply_to: Option<String>,
     metadata: Option<Value>,
     timestamp: String,
 }
@@ -352,20 +379,35 @@ impl MessagingServer {
         }).to_string()
     }
 
-    #[tool(description = "Send a message to a channel (in-app messaging)")]
+    #[tool(description = "Send a message to a channel. Supports text, HTML, image, video, audio, file, location, and contact types. Use media_url for attachments.")]
     async fn send_message(&self, Parameters(input): Parameters<MessageInput>) -> String {
+        let msg_type = input.msg_type.unwrap_or_else(|| "text".into());
         let msg = StoredMessage {
             id: format!("msg_{}", msg_id()),
             channel: input.channel.clone(),
             sender: input.sender.clone(),
             text: input.text.clone(),
-            msg_type: input.msg_type.unwrap_or_else(|| "text".into()),
+            msg_type: msg_type.clone(),
+            media_url: input.media_url.clone(),
+            mime_type: input.mime_type.clone(),
+            thumbnail_url: input.thumbnail_url.clone(),
+            file_name: input.file_name.clone(),
+            file_size: input.file_size,
+            duration_seconds: input.duration_seconds,
+            lat: input.lat,
+            lon: input.lon,
+            reply_to: input.reply_to.clone(),
             metadata: input.metadata,
             timestamp: now(),
         };
         let id = msg.id.clone();
         self.messages.lock().unwrap().entry(input.channel.clone()).or_default().push(msg);
-        json!({"status": "sent", "message_id": id, "channel": input.channel, "timestamp": now()}).to_string()
+        json!({
+            "status": "sent", "message_id": id, "channel": input.channel,
+            "type": msg_type,
+            "has_media": input.media_url.is_some(),
+            "timestamp": now()
+        }).to_string()
     }
 
     #[tool(description = "Get messages from a channel")]
