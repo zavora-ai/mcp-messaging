@@ -36,6 +36,52 @@ pub struct SmsInput {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AfricasTalkingInput {
+    /// Recipient phone number (E.164, e.g. +254712345678)
+    pub to: String,
+    /// Message text
+    pub message: String,
+    /// Sender ID (optional, registered short code)
+    pub from: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct VonageInput {
+    /// Recipient phone number (E.164)
+    pub to: String,
+    /// Message text
+    pub message: String,
+    /// Sender ID or number
+    pub from: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SinchInput {
+    /// Recipient phone number (E.164)
+    pub to: String,
+    /// Message text
+    pub message: String,
+    /// Sender ID
+    pub from: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct MessageStatusInput {
+    /// Message ID to check status of
+    pub message_id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SetPriorityInput {
+    /// Message ID in queue
+    pub message_id: String,
+    /// Queue name
+    pub queue: String,
+    /// New priority (higher = processed first)
+    pub priority: i32,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct WebhookInput {
     /// Destination URL to POST to
     pub url: String,
@@ -155,6 +201,12 @@ pub struct MessagingServer {
     pub twilio_sid: Option<String>,
     pub twilio_token: Option<String>,
     pub twilio_from: Option<String>,
+    pub at_username: Option<String>,
+    pub at_api_key: Option<String>,
+    pub vonage_key: Option<String>,
+    pub vonage_secret: Option<String>,
+    pub sinch_plan_id: Option<String>,
+    pub sinch_token: Option<String>,
 }
 
 impl MessagingServer {
@@ -168,6 +220,12 @@ impl MessagingServer {
             twilio_sid: std::env::var("TWILIO_ACCOUNT_SID").ok(),
             twilio_token: std::env::var("TWILIO_AUTH_TOKEN").ok(),
             twilio_from: std::env::var("TWILIO_FROM_NUMBER").ok(),
+            at_username: std::env::var("AT_USERNAME").ok(),
+            at_api_key: std::env::var("AT_API_KEY").ok(),
+            vonage_key: std::env::var("VONAGE_API_KEY").ok(),
+            vonage_secret: std::env::var("VONAGE_API_SECRET").ok(),
+            sinch_plan_id: std::env::var("SINCH_SERVICE_PLAN_ID").ok(),
+            sinch_token: std::env::var("SINCH_API_TOKEN").ok(),
         }
     }
 }
@@ -371,5 +429,104 @@ impl MessagingServer {
             "instructions": "Poll the subscribe_url with GET for server-sent events, or use the ntfy app",
             "timestamp": now()
         }).to_string()
+    }
+
+    // === Africa's Talking SMS (Africa: Kenya, Nigeria, Uganda, Tanzania, etc.) ===
+
+    #[tool(description = "Send SMS via Africa's Talking (covers Kenya, Nigeria, Uganda, Tanzania, Rwanda, Ghana, South Africa, 20+ African countries). Requires AT_USERNAME, AT_API_KEY env vars.")]
+    async fn send_sms_africa(&self, Parameters(input): Parameters<AfricasTalkingInput>) -> String {
+        let (Some(username), Some(api_key)) = (&self.at_username, &self.at_api_key) else {
+            return json!({"status": "error", "message": "Africa's Talking not configured. Set AT_USERNAME, AT_API_KEY"}).to_string();
+        };
+        let url = if username == "sandbox" {
+            "https://api.sandbox.africastalking.com/version1/messaging"
+        } else {
+            "https://api.africastalking.com/version1/messaging"
+        };
+        let mut form = vec![("username", username.as_str()), ("to", &input.to), ("message", &input.message)];
+        if let Some(ref from) = input.from { form.push(("from", from.as_str())); }
+        match self.client.post(url).header("apiKey", api_key.as_str()).header("Accept", "application/json").form(&form).send().await {
+            Ok(resp) => match resp.json::<Value>().await {
+                Ok(data) => {
+                    let recipients = &data["SMSMessageData"]["Recipients"];
+                    json!({"status": "sent", "provider": "africastalking", "to": input.to, "cost": recipients[0]["cost"], "message_id": recipients[0]["messageId"], "status_code": recipients[0]["statusCode"], "timestamp": now()}).to_string()
+                }
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Vonage/Nexmo SMS (Europe, Global) ===
+
+    #[tool(description = "Send SMS via Vonage/Nexmo (covers Europe, Americas, Asia-Pacific — 200+ countries). Requires VONAGE_API_KEY, VONAGE_API_SECRET env vars.")]
+    async fn send_sms_europe(&self, Parameters(input): Parameters<VonageInput>) -> String {
+        let (Some(key), Some(secret)) = (&self.vonage_key, &self.vonage_secret) else {
+            return json!({"status": "error", "message": "Vonage not configured. Set VONAGE_API_KEY, VONAGE_API_SECRET"}).to_string();
+        };
+        let from = input.from.as_deref().unwrap_or("MCP");
+        let body = json!({"api_key": key, "api_secret": secret, "to": input.to, "from": from, "text": input.message});
+        match self.client.post("https://rest.nexmo.com/sms/json").json(&body).send().await {
+            Ok(resp) => match resp.json::<Value>().await {
+                Ok(data) => {
+                    let msg = &data["messages"][0];
+                    json!({"status": msg["status"], "provider": "vonage", "to": input.to, "message_id": msg["message-id"], "remaining_balance": msg["remaining-balance"], "message_price": msg["message-price"], "network": msg["network"], "timestamp": now()}).to_string()
+                }
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Sinch SMS (Asia-Pacific, Global) ===
+
+    #[tool(description = "Send SMS via Sinch (covers Asia-Pacific, Australia, India, Japan, Singapore — 200+ countries). Requires SINCH_SERVICE_PLAN_ID, SINCH_API_TOKEN env vars.")]
+    async fn send_sms_asia(&self, Parameters(input): Parameters<SinchInput>) -> String {
+        let (Some(plan_id), Some(token)) = (&self.sinch_plan_id, &self.sinch_token) else {
+            return json!({"status": "error", "message": "Sinch not configured. Set SINCH_SERVICE_PLAN_ID, SINCH_API_TOKEN"}).to_string();
+        };
+        let from = input.from.as_deref().unwrap_or("MCP");
+        let url = format!("https://sms.api.sinch.com/xms/v1/{}/batches", plan_id);
+        let body = json!({"to": [input.to], "from": from, "body": input.message});
+        match self.client.post(&url).bearer_auth(token).json(&body).send().await {
+            Ok(resp) => match resp.json::<Value>().await {
+                Ok(data) => json!({"status": "sent", "provider": "sinch", "to": input.to, "batch_id": data["id"], "created_at": data["created_at"], "timestamp": now()}).to_string(),
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Message Status ===
+
+    #[tool(description = "Get delivery status of a sent message (checks in-app message store)")]
+    async fn get_message_status(&self, Parameters(input): Parameters<MessageStatusInput>) -> String {
+        let messages = self.messages.lock().unwrap();
+        for (_channel, msgs) in messages.iter() {
+            if let Some(msg) = msgs.iter().find(|m| m.id == input.message_id) {
+                return json!({
+                    "message_id": msg.id, "channel": msg.channel,
+                    "sender": msg.sender, "status": "delivered",
+                    "sent_at": msg.timestamp, "delivered_at": msg.timestamp,
+                    "read_at": null
+                }).to_string();
+            }
+        }
+        json!({"message_id": input.message_id, "status": "not_found"}).to_string()
+    }
+
+    // === Queue Priority ===
+
+    #[tool(description = "Update priority of a message in a queue (higher priority = processed first)")]
+    async fn set_queue_priority(&self, Parameters(input): Parameters<SetPriorityInput>) -> String {
+        let mut queues = self.queues.lock().unwrap();
+        if let Some(queue) = queues.get_mut(&input.queue) {
+            if let Some(msg) = queue.iter_mut().find(|m| m.id == input.message_id) {
+                let old = msg.priority;
+                msg.priority = input.priority;
+                return json!({"message_id": input.message_id, "queue": input.queue, "old_priority": old, "new_priority": input.priority, "status": "updated"}).to_string();
+            }
+        }
+        json!({"message_id": input.message_id, "status": "not_found"}).to_string()
     }
 }

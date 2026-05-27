@@ -1,6 +1,6 @@
 server_id = "mcp_messaging"
 display_name = "Messaging"
-version = "1.0.0"
+version = "1.1.0"
 domain = "messaging"
 sdk_version = "0.1.0"
 risk_level = "medium"
