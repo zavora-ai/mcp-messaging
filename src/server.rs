@@ -72,6 +72,46 @@ pub struct MessageStatusInput {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ReadReceiptInput {
+    /// Message ID to mark as read
+    pub message_id: String,
+    /// Channel ID
+    pub channel: String,
+    /// Reader user ID
+    pub reader: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RecallInput {
+    /// Message ID to recall/delete
+    pub message_id: String,
+    /// Channel ID
+    pub channel: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct FormatMessageInput {
+    /// Plain text to format
+    pub text: String,
+    /// Font family (e.g. "Arial", "Courier New", "Georgia", "monospace")
+    pub font: Option<String>,
+    /// Font size in px (e.g. 14, 16, 20)
+    pub font_size: Option<u32>,
+    /// Text color (hex, e.g. "#FF5733" or named "red")
+    pub color: Option<String>,
+    /// Background color (hex or named)
+    pub background: Option<String>,
+    /// Bold
+    pub bold: Option<bool>,
+    /// Italic
+    pub italic: Option<bool>,
+    /// Underline
+    pub underline: Option<bool>,
+    /// Text alignment: left, center, right
+    pub align: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct FcmInput {
     /// FCM device token or topic (prefix topic with /topics/)
     pub to: String,
@@ -221,6 +261,8 @@ struct StoredMessage {
     reply_to: Option<String>,
     metadata: Option<Value>,
     timestamp: String,
+    read_by: Vec<(String, String)>, // (user_id, read_at)
+    recalled: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -399,6 +441,8 @@ impl MessagingServer {
             reply_to: input.reply_to.clone(),
             metadata: input.metadata,
             timestamp: now(),
+            read_by: Vec::new(),
+            recalled: false,
         };
         let id = msg.id.clone();
         self.messages.lock().unwrap().entry(input.channel.clone()).or_default().push(msg);
@@ -590,20 +634,83 @@ impl MessagingServer {
 
     // === Message Status ===
 
-    #[tool(description = "Get delivery status of a sent message (checks in-app message store)")]
+    #[tool(description = "Get delivery status of a sent message (sent, delivered, read, recalled)")]
     async fn get_message_status(&self, Parameters(input): Parameters<MessageStatusInput>) -> String {
         let messages = self.messages.lock().unwrap();
         for (_channel, msgs) in messages.iter() {
             if let Some(msg) = msgs.iter().find(|m| m.id == input.message_id) {
+                let status = if msg.recalled { "recalled" } else if !msg.read_by.is_empty() { "read" } else { "delivered" };
                 return json!({
                     "message_id": msg.id, "channel": msg.channel,
-                    "sender": msg.sender, "status": "delivered",
-                    "sent_at": msg.timestamp, "delivered_at": msg.timestamp,
-                    "read_at": null
+                    "sender": msg.sender, "status": status,
+                    "sent_at": msg.timestamp,
+                    "read_by": msg.read_by.iter().map(|(u,t)| json!({"user": u, "read_at": t})).collect::<Vec<_>>(),
+                    "recalled": msg.recalled
                 }).to_string();
             }
         }
         json!({"message_id": input.message_id, "status": "not_found"}).to_string()
+    }
+
+    // === Read Receipts ===
+
+    #[tool(description = "Mark a message as read by a user (sets read receipt)")]
+    async fn mark_as_read(&self, Parameters(input): Parameters<ReadReceiptInput>) -> String {
+        let mut messages = self.messages.lock().unwrap();
+        if let Some(msgs) = messages.get_mut(&input.channel) {
+            if let Some(msg) = msgs.iter_mut().find(|m| m.id == input.message_id) {
+                if !msg.read_by.iter().any(|(u, _)| u == &input.reader) {
+                    msg.read_by.push((input.reader.clone(), now()));
+                }
+                return json!({"status": "read", "message_id": input.message_id, "reader": input.reader, "read_at": now()}).to_string();
+            }
+        }
+        json!({"status": "not_found", "message_id": input.message_id}).to_string()
+    }
+
+    // === Recall/Delete ===
+
+    #[tool(description = "Recall (unsend) a message — marks it as recalled so clients hide the content")]
+    async fn recall_message(&self, Parameters(input): Parameters<RecallInput>) -> String {
+        let mut messages = self.messages.lock().unwrap();
+        if let Some(msgs) = messages.get_mut(&input.channel) {
+            if let Some(msg) = msgs.iter_mut().find(|m| m.id == input.message_id) {
+                msg.recalled = true;
+                msg.text = "[Message recalled]".into();
+                msg.media_url = None;
+                return json!({"status": "recalled", "message_id": input.message_id, "channel": input.channel, "timestamp": now()}).to_string();
+            }
+        }
+        json!({"status": "not_found", "message_id": input.message_id}).to_string()
+    }
+
+    // === Message Formatting ===
+
+    #[tool(description = "Format text into styled HTML message with custom font, size, color, background, bold, italic, underline, alignment")]
+    async fn format_message(&self, Parameters(input): Parameters<FormatMessageInput>) -> String {
+        let mut styles = Vec::new();
+        if let Some(ref font) = input.font { styles.push(format!("font-family:'{}'", font)); }
+        if let Some(size) = input.font_size { styles.push(format!("font-size:{}px", size)); }
+        if let Some(ref color) = input.color { styles.push(format!("color:{}", color)); }
+        if let Some(ref bg) = input.background { styles.push(format!("background-color:{}", bg)); }
+        if input.bold.unwrap_or(false) { styles.push("font-weight:bold".into()); }
+        if input.italic.unwrap_or(false) { styles.push("font-style:italic".into()); }
+        if input.underline.unwrap_or(false) { styles.push("text-decoration:underline".into()); }
+        if let Some(ref align) = input.align { styles.push(format!("text-align:{}", align)); }
+        styles.push("padding:8px".into());
+
+        let html = format!("<div style=\"{}\">{}</div>", styles.join(";"), input.text);
+        json!({
+            "html": html,
+            "plain_text": input.text,
+            "msg_type": "html",
+            "styles_applied": {
+                "font": input.font, "font_size": input.font_size,
+                "color": input.color, "background": input.background,
+                "bold": input.bold, "italic": input.italic,
+                "underline": input.underline, "align": input.align
+            }
+        }).to_string()
     }
 
     // === Queue Priority ===
