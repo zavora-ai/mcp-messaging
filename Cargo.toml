@@ -2,7 +2,7 @@
 
 [package]
 name = "mcp-messaging"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2024"
 rust-version = "1.94.1"
 description = "Messaging & Notifications MCP server — push notifications, SMS, webhooks, in-app messaging, message queues, broadcasts"

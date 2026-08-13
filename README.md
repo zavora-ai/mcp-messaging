@@ -336,7 +336,7 @@ Mistake → recall_message
 ```toml
 server_id = "mcp_messaging"
 display_name = "Messaging"
-version = "1.4.0"
+version = "1.5.0"
 domain = "messaging"
 risk_level = "medium"
 writes_allowed = "gated"
