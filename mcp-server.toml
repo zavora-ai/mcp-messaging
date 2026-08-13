@@ -2,88 +2,150 @@ server_id = "mcp_messaging"
 display_name = "Messaging"
 version = "1.4.0"
 domain = "messaging"
-sdk_version = "0.1.0"
-risk_level = "medium"
+sdk_version = "0.2.0"
+risk_level = "critical"
 writes_allowed = "gated"
 transports = ["stdio"]
-governance_gates = ["rate_limit_required"]
+credentials = []
+governance_gates = ["rate_limit_required", "mrtr_approval"]
 environments = ["development", "staging", "production"]
-
-credentials = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"]
 
 [[tools]]
 name = "send_push"
-description = "Send push notification via ntfy.sh"
+description = "Send push notification to a topic/device. Uses ntfy.sh — recipients subscribe to the topic to receive notifications on any device."
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "broadcast"
-description = "Broadcast to multiple topics"
+description = "Broadcast push notification to multiple topics at once"
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "send_sms"
-description = "Send SMS via Twilio"
+description = "Send SMS via Twilio. Requires TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER env vars."
 risk_class = "internal_write"
 requires_approval = true
-credential_bindings = ["twilio"]
+credential_bindings = []
 
 [[tools]]
 name = "fire_webhook"
-description = "POST event to webhook URL"
+description = "Fire a webhook — POST JSON payload to a URL with event type header"
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "create_channel"
-description = "Create messaging channel"
+description = "Create a messaging channel (direct, group, or broadcast)"
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "send_message"
-description = "Send in-app message"
+description = "Send a message to a channel. Supports text, HTML, image, video, audio, file, location, and contact types. Use media_url for attachments."
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "get_messages"
-description = "Get channel messages"
+description = "Get messages from a channel"
 risk_class = "read_only"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "enqueue"
-description = "Add message to queue"
+description = "Enqueue a message to a named queue (for async processing, job dispatch, event sourcing)"
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "dequeue"
-description = "Remove messages from queue"
+description = "Dequeue messages from a queue (returns and removes oldest visible messages)"
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "queue_status"
-description = "Get queue depth and status"
+description = "Get queue status (depth, oldest message age)"
 risk_class = "read_only"
 requires_approval = false
 credential_bindings = []
 
 [[tools]]
 name = "subscribe_webhook"
-description = "Subscribe webhook to topic"
+description = "Subscribe a webhook URL to a ntfy topic (receive push notifications as HTTP POSTs)"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "send_sms_africa"
+description = "Send SMS via Africa's Talking (covers Kenya, Nigeria, Uganda, Tanzania, Rwanda, Ghana, South Africa, 20+ African countries). Requires AT_USERNAME, AT_API_KEY env vars."
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "send_sms_europe"
+description = "Send SMS via Vonage/Nexmo (covers Europe, Americas, Asia-Pacific — 200+ countries). Requires VONAGE_API_KEY, VONAGE_API_SECRET env vars."
+risk_class = "identity_security_action"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "send_sms_asia"
+description = "Send SMS via Sinch (covers Asia-Pacific, Australia, India, Japan, Singapore — 200+ countries). Requires SINCH_SERVICE_PLAN_ID, SINCH_API_TOKEN env vars."
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "send_fcm"
+description = "Send push notification via Google Firebase Cloud Messaging (FCM). Supports device tokens and topics. Requires FCM_SERVER_KEY env var."
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_message_status"
+description = "Get delivery status of a sent message (sent, delivered, read, recalled)"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "mark_as_read"
+description = "Mark a message as read by a user (sets read receipt)"
+risk_class = "internal_write"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "recall_message"
+description = "Recall (unsend) a message — marks it as recalled so clients hide the content"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "format_message"
+description = "Format text into styled HTML message with custom font, size, color, background, bold, italic, underline, alignment"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "set_queue_priority"
+description = "Update priority of a message in a queue (higher priority = processed first)"
 risk_class = "internal_write"
 requires_approval = false
 credential_bindings = []
