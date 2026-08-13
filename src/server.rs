@@ -315,7 +315,7 @@ impl MessagingServer {
     }
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl MessagingServer {
     // === Push Notifications ===
 
@@ -727,4 +727,11 @@ impl MessagingServer {
         }
         json!({"message_id": input.message_id, "status": "not_found"}).to_string()
     }
+}
+
+adk_mcp_sdk::mcp_2026_server! {
+    server: MessagingServer,
+    task_tools: [],
+    approval_tools: ["send_sms"],
+    cache_ttl_ms: 60_000,
 }
